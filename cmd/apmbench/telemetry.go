@@ -34,6 +34,28 @@ func (t telemetry) GetAll() (map[string]float64, error) {
 	}
 }
 
+func (t telemetry) Get(key string) (float64, error) {
+	resp, err := http.Get(t.endpoint + "/" + key)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get telemetry data: %w", err)
+	}
+	defer resp.Body.Close()
+
+	switch resp.StatusCode / 100 {
+	case 2:
+		m := make(map[string]float64)
+		if err := json.NewDecoder(resp.Body).Decode(&m); err != nil {
+			return 0, fmt.Errorf("failed to decode response body for getting telemetry data: %w", err)
+		}
+		if len(m) != 1 {
+			return 0, fmt.Errorf("invalid result, expected only 1 value but found %d", len(m))
+		}
+		return m[key], nil
+	default:
+		return 0, fmt.Errorf("unsuccessful response from benchmark telemetry server: %d", resp.StatusCode)
+	}
+}
+
 func (t telemetry) Reset() error {
 	resp, err := http.Post(t.endpoint+"/reset", "application/json", nil)
 	if err != nil {

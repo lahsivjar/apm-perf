@@ -5,6 +5,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -13,7 +14,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"go.elastic.co/apm/v2/stacktrace"
 	"golang.org/x/time/rate"
@@ -37,6 +37,7 @@ type result struct {
 func Run(
 	extraMetrics func(*testing.B),
 	resetStore func(),
+	cleanupFunc func(context.Context) error,
 	fns ...BenchmarkFunc,
 ) error {
 	type benchmark struct {
@@ -79,7 +80,7 @@ func Run(
 			name := fullBenchmarkName(b.name, agents)
 			for i := 0; i < int(cfg.Count); i++ {
 				resetStore() // reset the metric store before starting any benchmark
-				result := runOne(extraMetrics, b.fn)
+				result := runOne(extraMetrics, cleanupFunc, b.fn)
 				// testing.Benchmark discards all output so the only thing we can
 				// retrive is the benchmark status and result.
 				if result.skipped {
@@ -99,6 +100,7 @@ func Run(
 
 func runOne(
 	extraMetrics func(*testing.B),
+	cleanupFunc func(context.Context) error,
 	fn BenchmarkFunc,
 ) (result result) {
 	limiter := loadgen.GetNewLimiter(
@@ -126,7 +128,10 @@ func runOne(
 		// TODO (lahsivjar): Make this deterministic by introducing cleanup
 		// metrics. We can watch the cleanup metrics to reach to a specified
 		// threshold and then run the next benchmark.
-		time.Sleep(time.Minute)
+		// time.Sleep(time.Minute)
+		if err := cleanupFunc(context.Background()); err != nil {
+			b.Error("failed while waiting for benchmark to finish: %w", err)
+		}
 
 		extraMetrics(b)
 	})

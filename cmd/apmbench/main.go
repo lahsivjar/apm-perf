@@ -5,9 +5,12 @@
 package main
 
 import (
+	"context"
 	"flag"
+	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -20,8 +23,9 @@ func main() {
 		log.Fatalf("failed to setup logger: %v", err)
 	}
 
-	extraMetrics := func(b *testing.B) {}
+	extraMetrics := func(*testing.B) {}
 	resetStoreFunc := func() {}
+	cleanupFunc := func(context.Context) error { return nil }
 	if cfg.BenchmarkTelemetryEndpoint != "" {
 		telemetry := telemetry{endpoint: cfg.BenchmarkTelemetryEndpoint}
 		extraMetrics = func(b *testing.B) {
@@ -39,11 +43,35 @@ func main() {
 				logger.Warn("failed to reset store, benchmark report may be corrupted", zap.Error(err))
 			}
 		}
+		cleanupFunc = func(ctx context.Context) error {
+			t := time.NewTicker(time.Second)
+			defer t.Stop()
+
+			for {
+				select {
+				case <-ctx.Done():
+					return fmt.Errorf("condition not satisfied: %w", ctx.Err())
+				case <-t.C:
+					// TODO: take index lag as input/config
+					v, err := telemetry.Get("indexlag")
+					if err != nil {
+						logger.Warn("failed to get cleanup metric, retrying", zap.Error(err))
+						continue
+					}
+					logger.Info("found indexlag cleanup metric", zap.Float64("value", v))
+					if v == 0 {
+						logger.Info("cleanup metric value met, success")
+						return nil
+					}
+				}
+			}
+		}
 	}
 	// Run benchmarks
 	if err := Run(
 		extraMetrics,
 		resetStoreFunc,
+		cleanupFunc,
 		Benchmark1000Transactions,
 		BenchmarkOTLPTraces,
 		BenchmarkAgentAll,
