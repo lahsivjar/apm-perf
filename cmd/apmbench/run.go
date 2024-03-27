@@ -13,7 +13,6 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
 	"go.elastic.co/apm/v2/stacktrace"
 	"golang.org/x/time/rate"
@@ -45,7 +44,7 @@ func Run(
 	}
 
 	// Set `test.benchtime` flag based on the custom `benchtime` flag.
-	if err := flag.Set("test.benchtime", cfg.Benchtime.String()); err != nil {
+	if err := flag.Set("test.benchtime", cfg.Benchtime); err != nil {
 		return fmt.Errorf("failed to set test.benchtime flag: %w", err)
 	}
 
@@ -76,29 +75,20 @@ func Run(
 	for _, agents := range cfg.AgentsList {
 		runtime.GOMAXPROCS(agents)
 		for _, b := range benchmarks {
+			resetStore() // reset the metric store before starting any benchmark
 			name := fullBenchmarkName(b.name, agents)
-			for i := 0; i < int(cfg.Count); i++ {
-				resetStore() // reset the metric store before starting any benchmark
-				result := runOne(extraMetrics, b.fn)
-				// testing.Benchmark discards all output so the only thing we can
-				// retrive is the benchmark status and result.
-				if result.skipped {
-					fmt.Printf("--- SKIP: %s\n", name)
-					continue
-				}
-				if result.failed {
-					fmt.Printf("--- FAIL: %s\n", name)
-					return fmt.Errorf("benchmark %q failed", name)
-				}
-				fmt.Printf("%-*s\t%s\n", maxLen, name, result.benchResult)
-				// Sleep to allow any remaining data to be consumed by the pipelines
-				// so that they don't pollute the result of the next benchmark run.
-				//
-				// TODO (lahsivjar): Make this deterministic by introducing cleanup
-				// metrics. We can watch the cleanup metrics to reach to a specified
-				// threshold and then run the next benchmark.
-				time.Sleep(time.Minute)
+			result := runOne(extraMetrics, b.fn)
+			// testing.Benchmark discards all output so the only thing we can
+			// retrive is the benchmark status and result.
+			if result.skipped {
+				fmt.Printf("--- SKIP: %s\n", name)
+				continue
 			}
+			if result.failed {
+				fmt.Printf("--- FAIL: %s\n", name)
+				return fmt.Errorf("benchmark %q failed", name)
+			}
+			fmt.Printf("%-*s\t%s\n", maxLen, name, result.benchResult)
 		}
 	}
 	return nil

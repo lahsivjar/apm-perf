@@ -11,12 +11,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 )
 
 var cfg struct {
-	Count     uint
-	Benchtime time.Duration
+	Benchtime string
 	RunRE     *regexp.Regexp
 	SkipRE    *regexp.Regexp
 	// Sorted list of agents count to be used for benchmarking
@@ -27,8 +25,7 @@ var cfg struct {
 func init() {
 	cfg.AgentsList = []int{1}
 
-	flag.UintVar(&cfg.Count, "count", 1, "run benchmarks `n` times")
-	flag.DurationVar(&cfg.Benchtime, "benchtime", time.Second, "run each benchmark for duration `d`")
+	flag.StringVar(&cfg.Benchtime, "benchtime", "1s", "run each benchmark for duration `d` or N times if `d` is of the form Nx")
 	flag.Func("run", "run only benchmarks matching `regexp`", func(restr string) error {
 		if restr != "" {
 			re, err := regexp.Compile(restr)
